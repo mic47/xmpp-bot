@@ -24,10 +24,19 @@ def handler(pattern: Pattern, pats=_PATTERNS):
 
     return decorator
 
+authorized_users = set()
 
 def handle_message(conn, mess):
     text = mess.getBody()
-    user = mess.getFrom()
+    x = str(mess.getFrom()).split("/", maxsplit=1)
+    if len(x) == 1:
+        user, client = x[0], ""
+    else:
+        user, client = x
+    print(client)
+    if user not in authorized_users:
+        conn.send(xmpp.Message(mess.getFrom(), "Unauthorized"))
+        return
     for pattern, func in _PATTERNS:
         match = pattern.match(text)
         if match is None:
@@ -62,6 +71,10 @@ def open_link(conn, mess, match: re.Match) -> str:
 @handler(re.compile(r"where is my dog", flags=re.I))
 def where_is_my_dog(conn, mess, match: re.Match) -> str:
     return "I don't know."
+
+@handler(re.compile(r"restart", flags=re.I))
+def restart(conn, mess, match: re.Match) -> str:
+    sys.exit(0)
 
 
 async def get_weather(location) -> str:
@@ -107,7 +120,7 @@ def weather_location(conn, mess, match: re.Match) -> str:
     return get_event_loop().run_until_complete(get_weather(f"{lat}, {lon}"))
 
 
-@handler(re.compile(r"weather at (?P<loc>.*)", flags=re.I))
+@handler(re.compile(r"weather (in|at) (?P<loc>.*)", flags=re.I))
 def weather_at_location(conn, mess, match: re.Match) -> str:
     loc = match.group("loc")
     return get_event_loop().run_until_complete(get_weather(loc))
@@ -125,6 +138,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--account")
     parser.add_argument("--password")
+    parser.add_argument("--authorized-users", default="")
     return parser.parse_args()
 
 
@@ -132,6 +146,9 @@ def main():
     args = parse_args()
     jid = xmpp.JID(args.account)
     user, server, password = jid.getNode(), jid.getDomain(), args.password
+    global authorized_users
+    for x in args.authorized_users.split(","):
+        authorized_users.add(x)
 
     conn = xmpp.Client(server)  # ,debug=[])
     conres = conn.connect()
